@@ -14,8 +14,8 @@ class VideoDecoder_ffmpegImpl
     int                m_height;
     enum AVPixelFormat m_pix_fmt;
     const char *       m_src_filename = NULL;
-    const char *       m_video_dst_filename = NULL;
-    const char *       m_audio_dst_filename = NULL;
+//    const char *       m_video_dst_filename = NULL;
+//    const char *       m_audio_dst_filename = NULL;
     FILE *             m_video_dst_file = NULL;
     FILE *             m_audio_dst_file = NULL;
     uint8_t*           m_video_dst_data[4] = {NULL};
@@ -41,7 +41,7 @@ class VideoDecoder_ffmpegImpl
 
     char* av_err2str_cpp(int errnum)
     {
-        // #define av_err2str_cpp(errnum) \
+        // #define av_err2str_cpp(errnum) 
         // av_make_error_string(err_str, AV_ERROR_MAX_STRING_SIZE, errnum)
         return av_make_error_string(m_err_str, AV_ERROR_MAX_STRING_SIZE, errnum);
     }
@@ -56,7 +56,7 @@ class VideoDecoder_ffmpegImpl
 
     public:
     void decode_enncode(const char* src_filename, const char* video_dst_filename);
-    void clean_up();
+    void clean_up_exit();
     
 };
 
