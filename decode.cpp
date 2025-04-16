@@ -14,6 +14,7 @@
 }
 #include "ffmpeg_decode.hpp"
 #include <cassert>
+#include <iostream>
 
  int VideoDecoder_ffmpegImpl::output_video_frame(AVFrame *frame)
  {
@@ -36,6 +37,10 @@
  
      /* copy decoded frame to destination buffer:
       * this is required since rawvideo expects non aligned data */
+     std::cout << "frame->width:" << frame->width   << std::endl;
+     std::cout << "frame->height:" << frame->height << std::endl;
+     std::cout << "frame->format:" << frame->format << std::endl;
+
      av_image_copy2(m_video_dst_data, m_video_dst_linesize,
         frame->data, frame->linesize,
                     m_pix_fmt, m_width, m_height);
@@ -165,6 +170,7 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
          struct sample_fmt_entry *entry = &sample_fmt_entries[i];
          if (sample_fmt == entry->sample_fmt) {
              *fmt = AV_NE(entry->fmt_be, entry->fmt_le);
+             std::cout << "fmt:" << *fmt << std::endl;
              return 0;
          }
      }
@@ -179,13 +185,14 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     const char* src_filename,
     const char* video_dst_filename
 )
- {
+ {    
+    m_src_filename = src_filename;
     int ret = 0;
     int video_stream_idx = -1; 
     int audio_stream_idx = -1;
     AVCodecContext * video_dec_ctx;
      /* open input file, and allocate format context */
-     if (avformat_open_input(&m_fmt_ctx, m_src_filename, NULL, NULL) < 0) {
+     if (avformat_open_input(&m_fmt_ctx, src_filename, NULL, NULL) < 0) {
         fprintf(stderr, "Could not open source file %s\n", src_filename);
         exit(1);
     }
@@ -203,18 +210,23 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         if (!m_video_dst_file) {
             fprintf(stderr, "Could not open destination file %s\n", video_dst_filename);
             ret = 1;
-            clean_up();
+            clean_up_exit();
         }
 
         /* allocate image where the decoded image will be put */
         m_width   =  video_dec_ctx->width;
         m_height  =  video_dec_ctx->height;
         m_pix_fmt =  video_dec_ctx->pix_fmt;
+
+        std::cout << "m_width:" << m_width << std::endl;
+        std::cout << "m_height:" << m_height << std::endl;
+        std::cout << "m_pix_fmt:" << m_pix_fmt << std::endl;
+
         ret = av_image_alloc(m_video_dst_data, m_video_dst_linesize,
             m_width, m_height, m_pix_fmt, 1);
         if (ret < 0) {
             fprintf(stderr, "Could not allocate raw video buffer\n");
-            clean_up();
+            clean_up_exit();
         }
         m_video_dst_bufsize = ret;
     }
@@ -236,21 +248,21 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     if (!m_audio_stream && !m_video_stream) {
         fprintf(stderr, "Could not find audio or video stream in the input, aborting\n");
         ret = 1;
-        clean_up();
+        clean_up_exit();
     }
 
     AVFrame* frame = av_frame_alloc();
     if (!frame) {
         fprintf(stderr, "Could not allocate frame\n");
         ret = AVERROR(ENOMEM);
-        clean_up();
+        clean_up_exit();
     }
 
     AVPacket* pkt = av_packet_alloc();
     if (!pkt) {
         fprintf(stderr, "Could not allocate packet\n");
         ret = AVERROR(ENOMEM);
-        goto end;
+        clean_up_exit();
     }
 
     if (m_video_stream)
@@ -259,7 +271,7 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     //     printf("Demuxing audio from file '%s' into '%s'\n", src_filename, audio_dst_filename);
 
     /* read frames from the file */
-    while (av_read_frame(fmt_ctx, pkt) >= 0) {
+    while (av_read_frame(m_fmt_ctx, pkt) >= 0) {
         // check if the packet belongs to a stream we are interested in, otherwise
         // skip it
         if (pkt->stream_index == video_stream_idx)
@@ -312,7 +324,7 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
 
  }
 
- void VideoDecoder_ffmpegImpl::clean_up()
+ void VideoDecoder_ffmpegImpl::clean_up_exit()
 {
     if (m_video_dst_file)
         fclose(m_video_dst_file);
@@ -324,6 +336,7 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     avformat_close_input(&m_fmt_ctx);
     avcodec_free_context(&m_video_dec_ctx);
     avcodec_free_context(&m_audio_dec_ctx);
+    exit(1);
 }
 
  int main (int argc, char **argv)
@@ -343,7 +356,8 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     char* video_dst_filename;
     src_filename = argv[1];
     video_dst_filename = argv[2];
- 
+    VideoDecoder_ffmpegImpl codec ;
+    codec.decode_enncode(src_filename, video_dst_filename);
  
      return ret < 0;
  }
