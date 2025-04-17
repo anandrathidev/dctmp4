@@ -22,11 +22,13 @@ class VideoDecoder_ffmpegImpl
     int                m_video_dst_linesize[4];
     int                m_video_dst_bufsize;    
     AVFrame*           m_frame = NULL;
+    AVFrame*           m_RGBFrame = NULL;
     AVPacket*          m_pkt = NULL;
     int                m_video_frame_count = 0;
     int                m_audio_frame_count = 0;
     char               m_ts_str[AV_TS_MAX_STRING_SIZE] = {0};
     char               m_err_str[AV_TS_MAX_STRING_SIZE] = {0};
+    SwsContext*        m_sws_ctx = NULL;    
 
     
     char* av_ts2timestr_cpp(int64_t ts, const AVRational *tb) 
@@ -59,7 +61,18 @@ class VideoDecoder_ffmpegImpl
     public:
     void decode_enncode(const char* src_filename, const char* video_dst_filename);
     void clean_up_exit();
-    
+
+    bool VideoDecoder_ffmpegImpl::retrieve_motion(uint8_t **frame, 
+        int *step, 
+        int *width, 
+        int *height, 
+        int *cn, 
+        char *frame_type, 
+        int32_t **motion_vectors, 
+        int32_t *num_mvs, 
+        double *frame_timestamp) 
+        
+
 };
 
 #endif

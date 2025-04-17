@@ -65,10 +65,9 @@
  
 int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, 
     AVFrame* frame, 
-    AVPacket* pkt,
-    AVFrame* pRGBFrame)
+    AVPacket* pkt)
 {
-    struct SwsContext* sws_ctx = NULL;
+    //struct SwsContext* sws_ctx = NULL;
     //char buf[1024];
     int ret = -1;
     int sts;
@@ -82,18 +81,20 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
 
     //Create SWS Context for converting from decode pixel format (like YUV420) to RGB
     ////////////////////////////////////////////////////////////////////////////
-    sws_ctx = sws_getContext(dec_ctx->width,
-                             dec_ctx->height,
-                             dec_ctx->pix_fmt,
-                             dec_ctx->width,
-                             dec_ctx->height,
-                             AV_PIX_FMT_RGB24,
-                             SWS_BICUBIC,
-                             NULL,
-                             NULL,
+    m_sws_ctx = sws_getCachedContext(
+                            m_sws_ctx,
+                            dec_ctx->width,
+                            dec_ctx->height,
+                            dec_ctx->pix_fmt,
+                            dec_ctx->width,
+                            dec_ctx->height,
+                            AV_PIX_FMT_RGB24,
+                            SWS_BICUBIC,
+                            NULL,
+                            NULL,
                              NULL);
 
-    if (sws_ctx == nullptr)
+    if (m_sws_ctx == nullptr)
     {
         // return;  //Error!
         return ret;
@@ -105,19 +106,17 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
     ////////////////////////////////////////////////////////////////////////////
     //AVFrame* pRGBFrame = av_frame_alloc();
 
-    pRGBFrame->format = AV_PIX_FMT_RGB24;
-    pRGBFrame->width = dec_ctx->width;
-    pRGBFrame->height = dec_ctx->height;
+    m_RGBFrame->format = AV_PIX_FMT_RGB24;
+    m_RGBFrame->width = dec_ctx->width;
+    m_RGBFrame->height = dec_ctx->height;
 
-    sts = av_frame_get_buffer(pRGBFrame, 0);
-
+    sts = av_frame_get_buffer(m_RGBFrame, 0);
     if (sts < 0)
     {
         return sts;
         // return;  //Error!
     }
     ////////////////////////////////////////////////////////////////////////////
-
 
     while (ret >= 0) 
     {
@@ -145,13 +144,13 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
          
         //Convert from input format (e.g YUV420) to RGB and save to PPM:
         ////////////////////////////////////////////////////////////////////////////
-        sts = sws_scale(sws_ctx,                //struct SwsContext* c,
+        sts = sws_scale(m_sws_ctx,                //struct SwsContext* c,
                         frame->data,            //const uint8_t* const srcSlice[],
                         frame->linesize,        //const int srcStride[],
                         0,                      //int srcSliceY, 
                         frame->height,          //int srcSliceH,
-                        pRGBFrame->data,        //uint8_t* const dst[], 
-                        pRGBFrame->linesize);   //const int dstStride[]);
+                        m_RGBFrame->data,        //uint8_t* const dst[], 
+                        m_RGBFrame->linesize);   //const int dstStride[]);
 
         if (sts != frame->height)
         {
@@ -159,8 +158,8 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
             return -1;
             //return;  //Error!
         }
-        std::cout << "pRGBFrame->width:" << pRGBFrame->width << std::endl;
-        std::cout << "pRGBFrame->height:" << pRGBFrame->height << std::endl;
+        std::cout << "pRGBFrame->width:" << m_RGBFrame->width << std::endl;
+        std::cout << "pRGBFrame->height:" << m_RGBFrame->height << std::endl;
         
         //snprintf(buf, sizeof(buf), "%s_%03d.ppm", filename, dec_ctx->frame_num);
         //ppm_save(pRGBFrame->data[0], pRGBFrame->linesize[0], pRGBFrame->width, pRGBFrame->height, buf);
@@ -169,12 +168,11 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
     }
 
     //Free
-    av_frame_unref(pRGBFrame);
-    sws_freeContext(sws_ctx);
-    av_frame_free(&pRGBFrame);
+    //av_frame_unref(m_RGBFrame);
+    //sws_freeContext(m_sws_ctx);
+    //av_frame_free(&m_RGBFrame);
     return 0;
 }
-
 
  int VideoDecoder_ffmpegImpl::decode_packet(AVCodecContext *dec, 
     const AVPacket *pkt, 
@@ -374,8 +372,8 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
 
     //Allocate frame for storing image converted to RGB.
     ////////////////////////////////////////////////////////////////////////////
-    AVFrame* pRGBFrame = av_frame_alloc();
-    if (!pRGBFrame) {
+    m_RGBFrame = av_frame_alloc();
+    if (!m_RGBFrame) {
         fprintf(stderr, "Could not allocate RGB frame\n");
         ret = AVERROR(ENOMEM);
         clean_up_exit();
@@ -399,7 +397,7 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         // skip it
         if (pkt->stream_index == video_stream_idx)
             //ret = decode_packet(video_dec_ctx, pkt, frame);
-            ret = decode_img(video_dec_ctx, frame,  pkt, pRGBFrame);
+            ret = decode_img(video_dec_ctx, frame,  pkt, m_RGBFrame);
         else if (pkt->stream_index == audio_stream_idx)
             assert(false && "No ausio decodeing implemented");
             //ret = decode_packet(audio_dec_ctx, pkt);
@@ -457,6 +455,10 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     av_free(m_video_dst_data[0]);
     av_frame_free(&m_frame);
     av_packet_free(&m_pkt);
+    av_frame_unref(m_RGBFrame);
+    sws_freeContext(m_sws_ctx);
+    av_frame_free(&m_RGBFrame);
+
     avformat_close_input(&m_fmt_ctx);
     avcodec_free_context(&m_video_dec_ctx);
     avcodec_free_context(&m_audio_dec_ctx);
@@ -488,3 +490,74 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
 
 
  
+ bool VideoDecoder_ffmpegImpl::retrieve_motion(
+/*    uint8_t **frame, 
+    int *step, 
+    int *width, 
+    int *height, 
+    int *cn, 
+    char *frame_type,
+    */ 
+    int32_t **motion_vectors, 
+    int32_t *num_mvs, 
+    double *frame_timestamp) 
+    {
+
+    if (!m_video_stream || !(this->m_frame->data[0]))
+        return false;
+
+    // change color space of frame
+    sws_scale(
+        m_sws_ctx,
+        m_frame->data,
+        m_frame->linesize,
+        0, m_video_dec_ctx->coded_height,
+        m_RGBFrame->data,
+        m_RGBFrame->linesize
+        );
+
+    *frame = this->picture.data;
+    *width = this->picture.width;
+    *height = this->picture.height;
+    *step = this->picture.step;
+    *cn = this->picture.cn;
+
+    // get motion vectors
+    AVFrameSideData *sd = av_frame_get_side_data(this->frame, AV_FRAME_DATA_MOTION_VECTORS);
+    if (sd) {
+        AVMotionVector *mvs = (AVMotionVector *)sd->data;
+
+        *num_mvs = sd->size / sizeof(*mvs);
+
+        if (*num_mvs > 0) {
+
+            // allocate memory for motion vectors as 1D array
+            if (!(*motion_vectors = (MVS_DTYPE *) malloc(*num_mvs * 10 * sizeof(MVS_DTYPE))))
+                return false;
+
+            // store the motion vectors in the allocated memory (C contiguous)
+            for (MVS_DTYPE i = 0; i < *num_mvs; ++i) {
+                *(*motion_vectors + i*10     ) = static_cast<MVS_DTYPE>(mvs[i].source);
+                *(*motion_vectors + i*10 +  1) = static_cast<MVS_DTYPE>(mvs[i].w);
+                *(*motion_vectors + i*10 +  2) = static_cast<MVS_DTYPE>(mvs[i].h);
+                *(*motion_vectors + i*10 +  3) = static_cast<MVS_DTYPE>(mvs[i].src_x);
+                *(*motion_vectors + i*10 +  4) = static_cast<MVS_DTYPE>(mvs[i].src_y);
+                *(*motion_vectors + i*10 +  5) = static_cast<MVS_DTYPE>(mvs[i].dst_x);
+                *(*motion_vectors + i*10 +  6) = static_cast<MVS_DTYPE>(mvs[i].dst_y);
+                *(*motion_vectors + i*10 +  7) = static_cast<MVS_DTYPE>(mvs[i].motion_x);
+                *(*motion_vectors + i*10 +  8) = static_cast<MVS_DTYPE>(mvs[i].motion_y);
+                *(*motion_vectors + i*10 +  9) = static_cast<MVS_DTYPE>(mvs[i].motion_scale);
+                //*(*motion_vectors + i*11 + 10) = static_cast<MVS_DTYPE>(mvs[i].flags);
+            }
+        }
+    }
+
+    // get frame type (I, P, B, etc.) and create a null terminated c-string
+    frame_type[0] = av_get_picture_type_char(this->frame->pict_type);
+    frame_type[1] = '\0';
+
+    // return the timestamp which was computed previously in grab()
+    *frame_timestamp = this->frame_timestamp;
+
+    return true;
+}
