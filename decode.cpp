@@ -63,18 +63,21 @@
 //      return 0;
 //  }
  
-void VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, AVFrame* frame, AVPacket* pkt)
+int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, 
+    AVFrame* frame, 
+    AVPacket* pkt,
+    AVFrame* pRGBFrame)
 {
     struct SwsContext* sws_ctx = NULL;
     //char buf[1024];
-    int ret;
+    int ret = -1;
     int sts;
 
     ret = avcodec_send_packet(dec_ctx, pkt);
     if (ret < 0)
     {
         fprintf(stderr, "Error sending a packet for decoding\n");
-        exit(1);
+        return ret;
     }
 
     //Create SWS Context for converting from decode pixel format (like YUV420) to RGB
@@ -92,14 +95,15 @@ void VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, AVFrame* frame
 
     if (sws_ctx == nullptr)
     {
-        return;  //Error!
+        // return;  //Error!
+        return ret;
     }
     ////////////////////////////////////////////////////////////////////////////
 
 
     //Allocate frame for storing image converted to RGB.
     ////////////////////////////////////////////////////////////////////////////
-    AVFrame* pRGBFrame = av_frame_alloc();
+    //AVFrame* pRGBFrame = av_frame_alloc();
 
     pRGBFrame->format = AV_PIX_FMT_RGB24;
     pRGBFrame->width = dec_ctx->width;
@@ -109,7 +113,8 @@ void VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, AVFrame* frame
 
     if (sts < 0)
     {
-        return;  //Error!
+        return sts;
+        // return;  //Error!
     }
     ////////////////////////////////////////////////////////////////////////////
 
@@ -117,14 +122,16 @@ void VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, AVFrame* frame
     while (ret >= 0) 
     {
         ret = avcodec_receive_frame(dec_ctx, frame);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-        {
-            return;
-        }
-        else if (ret < 0) 
-        {
-            fprintf(stderr, "Error during decoding\n");
-            exit(1);
+        if (ret < 0) {
+            // those two return values are special and mean there is no output
+            // frame available, but there were no errors during decoding
+            if (ret == AVERROR_EOF || ret == AVERROR(EAGAIN))
+            {
+                //std::cerr <<  "EOF during decoding\n";
+                return 0;
+            }
+            fprintf(stderr, "Error during decoding (%s)\n", av_err2str_cpp(ret));
+            return ret;
         }
 
         printf("saving frame %ld \n", dec_ctx->frame_num);
@@ -148,17 +155,24 @@ void VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, AVFrame* frame
 
         if (sts != frame->height)
         {
-            return;  //Error!
+            std::cerr <<  "sts != frame->height\n";
+            return -1;
+            //return;  //Error!
         }
-
+        std::cout << "pRGBFrame->width:" << pRGBFrame->width << std::endl;
+        std::cout << "pRGBFrame->height:" << pRGBFrame->height << std::endl;
+        
         //snprintf(buf, sizeof(buf), "%s_%03d.ppm", filename, dec_ctx->frame_num);
         //ppm_save(pRGBFrame->data[0], pRGBFrame->linesize[0], pRGBFrame->width, pRGBFrame->height, buf);
         ////////////////////////////////////////////////////////////////////////////
+        av_frame_unref(frame);
     }
 
     //Free
+    av_frame_unref(pRGBFrame);
     sws_freeContext(sws_ctx);
     av_frame_free(&pRGBFrame);
+    return 0;
 }
 
 
@@ -358,6 +372,15 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         clean_up_exit();
     }
 
+    //Allocate frame for storing image converted to RGB.
+    ////////////////////////////////////////////////////////////////////////////
+    AVFrame* pRGBFrame = av_frame_alloc();
+    if (!pRGBFrame) {
+        fprintf(stderr, "Could not allocate RGB frame\n");
+        ret = AVERROR(ENOMEM);
+        clean_up_exit();
+    }
+
     AVPacket* pkt = av_packet_alloc();
     if (!pkt) {
         fprintf(stderr, "Could not allocate packet\n");
@@ -375,7 +398,8 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         // check if the packet belongs to a stream we are interested in, otherwise
         // skip it
         if (pkt->stream_index == video_stream_idx)
-            ret = decode_packet(video_dec_ctx, pkt, frame);
+            //ret = decode_packet(video_dec_ctx, pkt, frame);
+            ret = decode_img(video_dec_ctx, frame,  pkt, pRGBFrame);
         else if (pkt->stream_index == audio_stream_idx)
             assert(false && "No ausio decodeing implemented");
             //ret = decode_packet(audio_dec_ctx, pkt);
@@ -461,3 +485,6 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
  
      return ret < 0;
  }
+
+
+ 
