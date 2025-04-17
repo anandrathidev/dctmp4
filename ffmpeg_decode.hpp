@@ -54,6 +54,8 @@ class VideoDecoder_ffmpegImpl
 
     int get_format_from_sample_fmt(const char **fmt, enum AVSampleFormat sample_fmt);
 
+    void decode_img(AVCodecContext* dec_ctx, AVFrame* frame, AVPacket* pkt );
+
     public:
     void decode_enncode(const char* src_filename, const char* video_dst_filename);
     void clean_up_exit();

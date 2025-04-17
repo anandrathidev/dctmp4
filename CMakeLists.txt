@@ -78,6 +78,15 @@ NO_CACHE
 NO_DEFAULT_PATH
 )
 
+
+find_library(LIB_FFMPEG_SWSCALE 
+NAMES swscale 
+PATHS 
+${FFMPEG_LIB_PATHS}
+NO_CACHE
+NO_DEFAULT_PATH
+)
+
 #message(" LIB_FFMPEG_AVCODEC_STATIC=${LIB_FFMPEG_AVCODEC_STATIC} ")
 #message(" LIB_FFMPEG_AVUTIL_STATIC=${LIB_FFMPEG_AVUTIL_STATIC} ")
 #message(" LIB_FFMPEG_AVFORMAT_STATIC=${LIB_FFMPEG_AVFORMAT_STATIC} ")
@@ -117,6 +126,7 @@ target_link_libraries(DCTEncoder  ${LIB_FFMPEG_AVUTIL}     )
 target_link_libraries(DCTEncoder  ${LIB_FFMPEG_AVFORMAT}   ) 
 target_link_libraries(DCTEncoder  ${LIB_FFMPEG_SWRESAMPLE} ) 
 target_link_libraries(DCTEncoder  ${LIB_FFMPEG_AVCODEC}    ) 
+target_link_libraries(DCTEncoder  ${LIB_FFMPEG_SWSCALE}   )
 
 #target_link_libraries(DCTEncoder  -Wl,--whole-archive ${LIB_FFMPEG_AVDEVICE_STATIC}  -Wl,--no-whole-archive) 
 target_link_libraries(DCTEncoder  ${LIBVA_DRM_LIB})

@@ -10,6 +10,7 @@
  #include <libavutil/timestamp.h>
  #include <libavcodec/avcodec.h>
  #include <libavformat/avformat.h>
+ #include <libswscale/swscale.h>
  #define __STDC_CONSTANT_MACROS
 }
 #include "ffmpeg_decode.hpp"
@@ -62,6 +63,105 @@
 //      return 0;
 //  }
  
+void VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, AVFrame* frame, AVPacket* pkt)
+{
+    struct SwsContext* sws_ctx = NULL;
+    //char buf[1024];
+    int ret;
+    int sts;
+
+    ret = avcodec_send_packet(dec_ctx, pkt);
+    if (ret < 0)
+    {
+        fprintf(stderr, "Error sending a packet for decoding\n");
+        exit(1);
+    }
+
+    //Create SWS Context for converting from decode pixel format (like YUV420) to RGB
+    ////////////////////////////////////////////////////////////////////////////
+    sws_ctx = sws_getContext(dec_ctx->width,
+                             dec_ctx->height,
+                             dec_ctx->pix_fmt,
+                             dec_ctx->width,
+                             dec_ctx->height,
+                             AV_PIX_FMT_RGB24,
+                             SWS_BICUBIC,
+                             NULL,
+                             NULL,
+                             NULL);
+
+    if (sws_ctx == nullptr)
+    {
+        return;  //Error!
+    }
+    ////////////////////////////////////////////////////////////////////////////
+
+
+    //Allocate frame for storing image converted to RGB.
+    ////////////////////////////////////////////////////////////////////////////
+    AVFrame* pRGBFrame = av_frame_alloc();
+
+    pRGBFrame->format = AV_PIX_FMT_RGB24;
+    pRGBFrame->width = dec_ctx->width;
+    pRGBFrame->height = dec_ctx->height;
+
+    sts = av_frame_get_buffer(pRGBFrame, 0);
+
+    if (sts < 0)
+    {
+        return;  //Error!
+    }
+    ////////////////////////////////////////////////////////////////////////////
+
+
+    while (ret >= 0) 
+    {
+        ret = avcodec_receive_frame(dec_ctx, frame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+        {
+            return;
+        }
+        else if (ret < 0) 
+        {
+            fprintf(stderr, "Error during decoding\n");
+            exit(1);
+        }
+
+        printf("saving frame %ld \n", dec_ctx->frame_num);
+        fflush(stdout);
+
+        /* the picture is allocated by the decoder. no need to
+           free it */
+        //snprintf(buf, sizeof(buf), "%s_%03d.pgm", filename, dec_ctx->frame_number);
+        //pgm_save(frame->data[0], frame->linesize[0],
+        //    frame->width, frame->height, buf);
+         
+        //Convert from input format (e.g YUV420) to RGB and save to PPM:
+        ////////////////////////////////////////////////////////////////////////////
+        sts = sws_scale(sws_ctx,                //struct SwsContext* c,
+                        frame->data,            //const uint8_t* const srcSlice[],
+                        frame->linesize,        //const int srcStride[],
+                        0,                      //int srcSliceY, 
+                        frame->height,          //int srcSliceH,
+                        pRGBFrame->data,        //uint8_t* const dst[], 
+                        pRGBFrame->linesize);   //const int dstStride[]);
+
+        if (sts != frame->height)
+        {
+            return;  //Error!
+        }
+
+        //snprintf(buf, sizeof(buf), "%s_%03d.ppm", filename, dec_ctx->frame_num);
+        //ppm_save(pRGBFrame->data[0], pRGBFrame->linesize[0], pRGBFrame->width, pRGBFrame->height, buf);
+        ////////////////////////////////////////////////////////////////////////////
+    }
+
+    //Free
+    sws_freeContext(sws_ctx);
+    av_frame_free(&pRGBFrame);
+}
+
+
  int VideoDecoder_ffmpegImpl::decode_packet(AVCodecContext *dec, 
     const AVPacket *pkt, 
     AVFrame* frame)
