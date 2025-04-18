@@ -67,8 +67,12 @@
  
 int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, 
     AVFrame* frame, 
-    AVPacket* pkt)
-{
+    AVPacket* pkt,
+    char *frame_type, 
+    int32_t **motion_vectors, 
+    int32_t *num_mvs 
+    )
+    {
     //struct SwsContext* sws_ctx = NULL;
     //char buf[1024];
     int ret = -1;
@@ -94,7 +98,7 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
                             SWS_BICUBIC,
                             NULL,
                             NULL,
-                             NULL);
+                            NULL);
 
     if (m_sws_ctx == nullptr)
     {
@@ -162,6 +166,13 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
         }
         std::cout << "pRGBFrame->width:" << m_RGBFrame->width << std::endl;
         std::cout << "pRGBFrame->height:" << m_RGBFrame->height << std::endl;
+        char frame_type[2] = {'?'};
+        std::vector<AVMotionVector> motion_vectors;
+        retrieve_motion( frame_type, motion_vectors ); 
+        std::cout << "motion_vectors:" << motion_vectors.size() << std::endl;
+        std::cout << "frame_type:" << frame_type << std::endl;
+
+            
         
         //snprintf(buf, sizeof(buf), "%s_%03d.ppm", filename, dec_ctx->frame_num);
         //ppm_save(pRGBFrame->data[0], pRGBFrame->linesize[0], pRGBFrame->width, pRGBFrame->height, buf);
@@ -295,7 +306,7 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
      return -1;
  }
 
- void VideoDecoder_ffmpegImpl::decode_enncode(
+ void VideoDecoder_ffmpegImpl::decode_encode(
     const char* src_filename,
     const char* video_dst_filename
 )
@@ -398,10 +409,16 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         // check if the packet belongs to a stream we are interested in, otherwise
         // skip it
         if (pkt->stream_index == video_stream_idx)
-            //ret = decode_packet(video_dec_ctx, pkt, frame);
-            ret = decode_img(video_dec_ctx, frame,  pkt, m_RGBFrame);
+        {
+            char frame_type[2] = "?"; 
+            int32_t *motion_vectors=nullptr; 
+            int32_t num_mvs;         
+            ret = decode_img(video_dec_ctx, frame,  
+                pkt, frame_type, 
+                &motion_vectors, &num_mvs);
+        }
         else if (pkt->stream_index == audio_stream_idx)
-            assert(false && "No ausio decodeing implemented");
+            assert(false && "audio decodeing NOT implemented");
             //ret = decode_packet(audio_dec_ctx, pkt);
         av_packet_unref(pkt);
         if (ret < 0)
@@ -485,24 +502,21 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     src_filename = argv[1];
     video_dst_filename = argv[2];
     VideoDecoder_ffmpegImpl codec ;
-    codec.decode_enncode(src_filename, video_dst_filename);
+    codec.decode_encode(src_filename, video_dst_filename);
  
      return ret < 0;
  }
-
-
  
- bool VideoDecoder_ffmpegImpl::retrieve_motion(
-    // uint8_t **frame, 
+     // uint8_t **frame, 
     // int *step, 
     // int *width, 
     // int *height, 
     // int *cn, 
-     
+
+
+ bool VideoDecoder_ffmpegImpl::retrieve_motion(
     char *frame_type,
-    int32_t **motion_vectors, 
-    int32_t *num_mvs 
-    //double *frame_timestamp
+    std::vector<AVMotionVector> &motion_vectors
     ) 
     {
 
@@ -530,27 +544,14 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     if (sd) {
         AVMotionVector *mvs = (AVMotionVector *)sd->data;
 
-        *num_mvs = sd->size / sizeof(*mvs);
+        int num_mvs = sd->size / sizeof(*mvs);
 
-        if (*num_mvs > 0) {
 
-            // allocate memory for motion vectors as 1D array
-            if (!(*motion_vectors = (MVS_DTYPE *) malloc(*num_mvs * 10 * sizeof(MVS_DTYPE))))
-                return false;
+        if (num_mvs > 0) {
 
-            // store the motion vectors in the allocated memory (C contiguous)
-            for (MVS_DTYPE i = 0; i < *num_mvs; ++i) {
-                *(*motion_vectors + i*10     ) = static_cast<MVS_DTYPE>(mvs[i].source);
-                *(*motion_vectors + i*10 +  1) = static_cast<MVS_DTYPE>(mvs[i].w);
-                *(*motion_vectors + i*10 +  2) = static_cast<MVS_DTYPE>(mvs[i].h);
-                *(*motion_vectors + i*10 +  3) = static_cast<MVS_DTYPE>(mvs[i].src_x);
-                *(*motion_vectors + i*10 +  4) = static_cast<MVS_DTYPE>(mvs[i].src_y);
-                *(*motion_vectors + i*10 +  5) = static_cast<MVS_DTYPE>(mvs[i].dst_x);
-                *(*motion_vectors + i*10 +  6) = static_cast<MVS_DTYPE>(mvs[i].dst_y);
-                *(*motion_vectors + i*10 +  7) = static_cast<MVS_DTYPE>(mvs[i].motion_x);
-                *(*motion_vectors + i*10 +  8) = static_cast<MVS_DTYPE>(mvs[i].motion_y);
-                *(*motion_vectors + i*10 +  9) = static_cast<MVS_DTYPE>(mvs[i].motion_scale);
-                //*(*motion_vectors + i*11 + 10) = static_cast<MVS_DTYPE>(mvs[i].flags);
+            // store the motion vectors 
+            for (MVS_DTYPE i = 0; i < num_mvs; ++i) {
+                motion_vectors.push_back(mvs[i]);
             }
         }
     }

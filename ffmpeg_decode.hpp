@@ -4,6 +4,8 @@
 
 #define MVS_DTYPE int32_t
 
+#include <vector>
+
 class VideoDecoder_ffmpegImpl
 {
     AVFormatContext *  m_fmt_ctx = NULL;
@@ -33,7 +35,7 @@ class VideoDecoder_ffmpegImpl
     SwsContext*        m_sws_ctx = NULL;    
 
     
-    char* av_ts2timestr_cpp(int64_t ts, const AVRational *tb) 
+    char* av_ts2timestr_cpp(int64_t ts, AVRational *tb) 
     {
         //  #define av_ts2timestr_cpp(ts, tb) av_ts_make_time_string(ts_str, ts, tb)
         if (ts == AV_NOPTS_VALUE)
@@ -58,22 +60,27 @@ class VideoDecoder_ffmpegImpl
 
     int get_format_from_sample_fmt(const char **fmt, enum AVSampleFormat sample_fmt);
 
-    int decode_img(AVCodecContext* dec_ctx, AVFrame* frame, AVPacket* pkt, AVFrame* pRGBFrame); 
-
-    public:
-    void decode_enncode(const char* src_filename, const char* video_dst_filename);
-    void clean_up_exit();
-
-    bool retrieve_motion(uint8_t **frame, 
-        //int *step, 
-        //int *width, 
-        //int *height, 
-        //int *cn, 
+    int decode_img(AVCodecContext* dec_ctx, 
+        AVFrame* frame, 
+        AVPacket* pkt,
         char *frame_type, 
         int32_t **motion_vectors, 
         int32_t *num_mvs 
-    //    double *frame_timestamp
-    ) 
+        ); 
+
+    public:
+    void decode_encode(
+        const char* src_filename, 
+        const char* video_dst_filename        
+    );
+    void clean_up_exit();
+
+    bool retrieve_motion(
+        char *frame_type, 
+        std::vector<AVMotionVector> &motion_vectors
+    ); 
         
 
 };
+
+#endif // FFMPEG_DEODE_HPP

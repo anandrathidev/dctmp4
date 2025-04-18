@@ -13,16 +13,19 @@ set(Boost_USE_STATIC_LIBS ON)
 set( Boost_USE_MULTITHREADED ON )
 
 
-message(" FFMPEG_LIB_PATHS=${FFMPEG_LIB_PATHS} ")
+message("FFMPEG_LIB_PATHS=${FFMPEG_LIB_PATHS} ")
 
-set(FFMPEG_INC_PATH  "${PROJECT_SOURCE_DIR}/../ffmpeg/"  )
+
+set(FFMPEG_INC_PATH  "$ENV{HOME}//ffmpeg/"  )
+# set(FFMPEG_INC_PATH  "${PROJECT_SOURCE_DIR}/../ffmpeg/"  )
 
 find_package(Boost REQUIRED COMPONENTS thread ) 
 find_package(ZLIB REQUIRED)
 find_package(LibLZMA REQUIRED)
 
 
-set(FFMPEG_LIB_PATHS "${PROJECT_SOURCE_DIR}/../ffmpeg/lib" )
+# set(FFMPEG_LIB_PATHS "${PROJECT_SOURCE_DIR}/../ffmpeg/lib" )
+set(FFMPEG_LIB_PATHS  "$ENV{HOME}//ffmpeg/lib"  )
 
 #/usr/lib/x86_64-linux-gnu/libdrm.so  
 find_library(
