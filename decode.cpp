@@ -5,14 +5,16 @@
  */
 
  extern "C" {
- #include <libavutil/imgutils.h>
- #include <libavutil/samplefmt.h>
- #include <libavutil/timestamp.h>
- #include <libavcodec/avcodec.h>
- #include <libavformat/avformat.h>
- #include <libswscale/swscale.h>
- #define __STDC_CONSTANT_MACROS
+    #include <libavutil/imgutils.h>
+    #include <libavutil/motion_vector.h>
+    #include <libavutil/samplefmt.h>
+    #include <libavutil/timestamp.h>
+    #include <libavcodec/avcodec.h>
+    #include <libavformat/avformat.h>
+    #include <libswscale/swscale.h>
+    #define __STDC_CONSTANT_MACROS
 }
+
 #include "ffmpeg_decode.hpp"
 #include <cassert>
 #include <iostream>
@@ -491,16 +493,17 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
 
  
  bool VideoDecoder_ffmpegImpl::retrieve_motion(
-/*    uint8_t **frame, 
-    int *step, 
-    int *width, 
-    int *height, 
-    int *cn, 
+    // uint8_t **frame, 
+    // int *step, 
+    // int *width, 
+    // int *height, 
+    // int *cn, 
+     
     char *frame_type,
-    */ 
     int32_t **motion_vectors, 
-    int32_t *num_mvs, 
-    double *frame_timestamp) 
+    int32_t *num_mvs 
+    //double *frame_timestamp
+    ) 
     {
 
     if (!m_video_stream || !(this->m_frame->data[0]))
@@ -516,14 +519,14 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         m_RGBFrame->linesize
         );
 
-    *frame = this->picture.data;
-    *width = this->picture.width;
-    *height = this->picture.height;
-    *step = this->picture.step;
-    *cn = this->picture.cn;
+    //*frame = this->picture.data;
+    //*width = this->picture.width;
+    //*height = this->picture.height;
+    //*step = this->picture.step;
+    //*cn = this->picture.cn;
 
     // get motion vectors
-    AVFrameSideData *sd = av_frame_get_side_data(this->frame, AV_FRAME_DATA_MOTION_VECTORS);
+    AVFrameSideData *sd = av_frame_get_side_data(m_frame, AV_FRAME_DATA_MOTION_VECTORS);
     if (sd) {
         AVMotionVector *mvs = (AVMotionVector *)sd->data;
 
@@ -553,11 +556,11 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     }
 
     // get frame type (I, P, B, etc.) and create a null terminated c-string
-    frame_type[0] = av_get_picture_type_char(this->frame->pict_type);
+    frame_type[0] = av_get_picture_type_char(m_frame->pict_type);
     frame_type[1] = '\0';
 
     // return the timestamp which was computed previously in grab()
-    *frame_timestamp = this->frame_timestamp;
+    //*frame_timestamp = this->frame_timestamp;
 
     return true;
 }
