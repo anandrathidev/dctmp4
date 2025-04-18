@@ -163,6 +163,7 @@ int VideoDecoder_ffmpegImpl::decode_img(
             return -1;
             //return;  //Error!
         }
+        ++m_frame_count;
         std::cout << "Frame->width:"  << m_frame->width << std::endl;
         std::cout << "Frame->height:" << m_frame->height << std::endl;
         std::cout << "pRGBFrame->width:" << m_RGBFrame->width << std::endl;
@@ -224,8 +225,14 @@ bool VideoDecoder_ffmpegImpl::retrieve_motion(
         if (num_mvs > 0) {
 
             // store the motion vectors 
-            for (MVS_DTYPE i = 0; i < num_mvs; ++i) {
+            for (MVS_DTYPE i = 0; i < num_mvs; ++i) 
+            {
                 motion_vectors.push_back(mvs[i]);
+                printf( "fc: %ld, src %2d, w %2d, h %2d, sx %4d, sy %4d, dx %4d, dy %4d, flags: 0x%" PRIx64 ", motionx %4d, motiony %4d, scale %4d\n ",
+                    m_frame_count, mvs[i].source,
+                    mvs[i].w, mvs[i].h, mvs[i].src_x, mvs[i].src_y,
+                    mvs[i].dst_x, mvs[i].dst_y, mvs[i].flags,
+                    mvs[i].motion_x, mvs[i].motion_y, mvs[i].motion_scale);                
             }
         }
     }

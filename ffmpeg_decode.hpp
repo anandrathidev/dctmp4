@@ -33,6 +33,7 @@ class VideoDecoder_ffmpegImpl
     char               m_ts_str[AV_TS_MAX_STRING_SIZE] = {0};
     char               m_err_str[AV_TS_MAX_STRING_SIZE] = {0};
     SwsContext*        m_sws_ctx = NULL;    
+    size_t             m_frame_count=0;
 
     
     char* av_ts2timestr_cpp(int64_t ts, AVRational *tb) 
