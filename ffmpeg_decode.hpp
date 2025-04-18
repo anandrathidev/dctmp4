@@ -2,6 +2,8 @@
 #ifndef FFMPEG_DEODE_HPP
 #define FFMPEG_DEODE_HPP
 
+#define MVS_DTYPE int32_t
+
 class VideoDecoder_ffmpegImpl
 {
     AVFormatContext *  m_fmt_ctx = NULL;
@@ -62,17 +64,16 @@ class VideoDecoder_ffmpegImpl
     void decode_enncode(const char* src_filename, const char* video_dst_filename);
     void clean_up_exit();
 
-    bool VideoDecoder_ffmpegImpl::retrieve_motion(uint8_t **frame, 
-        int *step, 
-        int *width, 
-        int *height, 
-        int *cn, 
+    bool retrieve_motion(uint8_t **frame, 
+        //int *step, 
+        //int *width, 
+        //int *height, 
+        //int *cn, 
         char *frame_type, 
         int32_t **motion_vectors, 
-        int32_t *num_mvs, 
-        double *frame_timestamp) 
+        int32_t *num_mvs 
+    //    double *frame_timestamp
+    ) 
         
 
 };
-
-#endif
