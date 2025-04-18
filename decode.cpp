@@ -65,9 +65,7 @@
 //      return 0;
 //  }
  
-int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx, 
-    AVFrame* frame, 
-    AVPacket* pkt,
+int VideoDecoder_ffmpegImpl::decode_img( 
     char *frame_type, 
     int32_t **motion_vectors, 
     int32_t *num_mvs 
@@ -78,7 +76,7 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
     int ret = -1;
     int sts;
 
-    ret = avcodec_send_packet(dec_ctx, pkt);
+    ret = avcodec_send_packet(m_video_dec_ctx, m_pkt);
     if (ret < 0)
     {
         fprintf(stderr, "Error sending a packet for decoding\n");
@@ -88,17 +86,18 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
     //Create SWS Context for converting from decode pixel format (like YUV420) to RGB
     ////////////////////////////////////////////////////////////////////////////
     m_sws_ctx = sws_getCachedContext(
-                            m_sws_ctx,
-                            dec_ctx->width,
-                            dec_ctx->height,
-                            dec_ctx->pix_fmt,
-                            dec_ctx->width,
-                            dec_ctx->height,
-                            AV_PIX_FMT_RGB24,
-                            SWS_BICUBIC,
-                            NULL,
-                            NULL,
-                            NULL);
+                    m_sws_ctx,
+                    m_video_dec_ctx->width,
+                    m_video_dec_ctx->height,
+                    m_video_dec_ctx->pix_fmt,
+                    m_video_dec_ctx->width,
+                    m_video_dec_ctx->height,
+                    AV_PIX_FMT_RGB24,
+                    SWS_BICUBIC,
+                    NULL,
+                    NULL,
+                    NULL);
+
 
     if (m_sws_ctx == nullptr)
     {
@@ -113,8 +112,8 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
     //AVFrame* pRGBFrame = av_frame_alloc();
 
     m_RGBFrame->format = AV_PIX_FMT_RGB24;
-    m_RGBFrame->width = dec_ctx->width;
-    m_RGBFrame->height = dec_ctx->height;
+    m_RGBFrame->width =  m_video_dec_ctx->width;
+    m_RGBFrame->height = m_video_dec_ctx->height;
 
     sts = av_frame_get_buffer(m_RGBFrame, 0);
     if (sts < 0)
@@ -126,7 +125,7 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
 
     while (ret >= 0) 
     {
-        ret = avcodec_receive_frame(dec_ctx, frame);
+        ret = avcodec_receive_frame(m_video_dec_ctx, m_frame);
         if (ret < 0) {
             // those two return values are special and mean there is no output
             // frame available, but there were no errors during decoding
@@ -139,7 +138,7 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
             return ret;
         }
 
-        printf("saving frame %ld \n", dec_ctx->frame_num);
+        printf("saving frame %ld \n", m_video_dec_ctx->frame_num);
         fflush(stdout);
 
         /* the picture is allocated by the decoder. no need to
@@ -151,19 +150,21 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
         //Convert from input format (e.g YUV420) to RGB and save to PPM:
         ////////////////////////////////////////////////////////////////////////////
         sts = sws_scale(m_sws_ctx,                //struct SwsContext* c,
-                        frame->data,            //const uint8_t* const srcSlice[],
-                        frame->linesize,        //const int srcStride[],
+                        m_frame->data,            //const uint8_t* const srcSlice[],
+                        m_frame->linesize,        //const int srcStride[],
                         0,                      //int srcSliceY, 
-                        frame->height,          //int srcSliceH,
+                        m_frame->height,          //int srcSliceH,
                         m_RGBFrame->data,        //uint8_t* const dst[], 
                         m_RGBFrame->linesize);   //const int dstStride[]);
 
-        if (sts != frame->height)
+        if (sts != m_frame->height)
         {
             std::cerr <<  "sts != frame->height\n";
             return -1;
             //return;  //Error!
         }
+        std::cout << "Frame->width:"  << m_frame->width << std::endl;
+        std::cout << "Frame->height:" << m_frame->height << std::endl;
         std::cout << "pRGBFrame->width:" << m_RGBFrame->width << std::endl;
         std::cout << "pRGBFrame->height:" << m_RGBFrame->height << std::endl;
         char frame_type[2] = {'?'};
@@ -171,61 +172,76 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
         retrieve_motion( frame_type, motion_vectors ); 
         std::cout << "motion_vectors:" << motion_vectors.size() << std::endl;
         std::cout << "frame_type:" << frame_type << std::endl;
-
-            
+          
         
         //snprintf(buf, sizeof(buf), "%s_%03d.ppm", filename, dec_ctx->frame_num);
         //ppm_save(pRGBFrame->data[0], pRGBFrame->linesize[0], pRGBFrame->width, pRGBFrame->height, buf);
         ////////////////////////////////////////////////////////////////////////////
-        av_frame_unref(frame);
+        av_frame_unref(m_frame);
     }
 
     //Free
-    //av_frame_unref(m_RGBFrame);
-    //sws_freeContext(m_sws_ctx);
-    //av_frame_free(&m_RGBFrame);
+    av_frame_unref(m_RGBFrame);
+    sws_freeContext(m_sws_ctx);
+    av_frame_free(&m_RGBFrame);
     return 0;
 }
 
- int VideoDecoder_ffmpegImpl::decode_packet(AVCodecContext *dec, 
-    const AVPacket *pkt, 
-    AVFrame* frame)
- {
-     int ret = 0;
- 
-     // submit the packet to the decoder
-     ret = avcodec_send_packet(dec, pkt);
-     if (ret < 0) {
-         fprintf(stderr, "Error submitting a packet for decoding (%s)\n", av_err2str_cpp(ret));
-         return ret;
-     }
- 
-     // get all the available frames from the decoder
-     while (ret >= 0) {
-         ret = avcodec_receive_frame(dec, frame);
-         if (ret < 0) {
-             // those two return values are special and mean there is no output
-             // frame available, but there were no errors during decoding
-             if (ret == AVERROR_EOF || ret == AVERROR(EAGAIN))
-                 return 0;
- 
-             fprintf(stderr, "Error during decoding (%s)\n", av_err2str_cpp(ret));
-             return ret;
-         }
- 
-         // write the frame data to output file
-         if (dec->codec->type == AVMEDIA_TYPE_VIDEO)
-             ret = output_video_frame(frame);
-         //else
-         //    ret = output_audio_frame(m_frame);
- 
-         av_frame_unref(frame);
-     }
- 
-     return ret;
- }
- 
- int VideoDecoder_ffmpegImpl::open_codec_context(int *stream_idx,
+bool VideoDecoder_ffmpegImpl::retrieve_motion(
+    char *frame_type,
+    std::vector<AVMotionVector>& motion_vectors
+    ) 
+    {
+
+    if (!m_video_stream || !(this->m_frame->data[0]))
+        return false;
+
+    // change color space of frame
+    sws_scale(
+        m_sws_ctx,
+        m_frame->data,
+        m_frame->linesize,
+        0, m_video_dec_ctx->coded_height,
+        m_RGBFrame->data,
+        m_RGBFrame->linesize
+        );
+
+    //*frame = this->picture.data;
+    //*width = this->picture.width;
+    //*height = this->picture.height;
+    //*step = this->picture.step;
+    //*cn = this->picture.cn;
+
+    // get motion vectors
+    AVFrameSideData *sd = av_frame_get_side_data(m_frame, AV_FRAME_DATA_MOTION_VECTORS);
+    std::cout << "sd:" << sd << std::endl;
+    if (sd) {
+        AVMotionVector *mvs = (AVMotionVector *)sd->data;
+
+        int num_mvs = sd->size / sizeof(*mvs);
+        std::cout << "num_mvs:" << num_mvs << std::endl;
+
+        if (num_mvs > 0) {
+
+            // store the motion vectors 
+            for (MVS_DTYPE i = 0; i < num_mvs; ++i) {
+                motion_vectors.push_back(mvs[i]);
+            }
+        }
+    }
+
+    // get frame type (I, P, B, etc.) and create a null terminated c-string
+    frame_type[0] = av_get_picture_type_char(m_frame->pict_type);
+    frame_type[1] = '\0';
+
+    // return the timestamp which was computed previously in grab()
+    //*frame_timestamp = this->frame_timestamp;
+
+    return true;
+}
+
+
+int VideoDecoder_ffmpegImpl::open_codec_context(int *stream_idx,
                                AVCodecContext **dec_ctx, enum AVMediaType type)
  {
      int ret, stream_index;
@@ -265,7 +281,9 @@ int VideoDecoder_ffmpegImpl::decode_img(AVCodecContext* dec_ctx,
          }
  
          /* Init the decoders */
-         if ((ret = avcodec_open2(*dec_ctx, dec, NULL)) < 0) {
+         AVDictionary *opts = NULL;
+         av_dict_set(&opts, "flags2", "+export_mvs", 0);
+         if ((ret = avcodec_open2(*dec_ctx, dec, &opts)) < 0) {
              fprintf(stderr, "Failed to open %s codec\n",
                      av_get_media_type_string(type));
              return ret;
@@ -315,7 +333,7 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     int ret = 0;
     int video_stream_idx = -1; 
     int audio_stream_idx = -1;
-    AVCodecContext * video_dec_ctx;
+    //AVCodecContext * video_dec_ctx;
      /* open input file, and allocate format context */
      if (avformat_open_input(&m_fmt_ctx, src_filename, NULL, NULL) < 0) {
         fprintf(stderr, "Could not open source file %s\n", src_filename);
@@ -328,7 +346,7 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         exit(1);
     }
 
-    if (open_codec_context(&video_stream_idx, &video_dec_ctx, AVMEDIA_TYPE_VIDEO) >= 0) {
+    if (open_codec_context(&video_stream_idx, &m_video_dec_ctx, AVMEDIA_TYPE_VIDEO) >= 0) {
         m_video_stream = m_fmt_ctx->streams[video_stream_idx];
 
         m_video_dst_file = fopen(video_dst_filename, "wb");
@@ -339,9 +357,9 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         }
 
         /* allocate image where the decoded image will be put */
-        m_width   =  video_dec_ctx->width;
-        m_height  =  video_dec_ctx->height;
-        m_pix_fmt =  video_dec_ctx->pix_fmt;
+        m_width   =  m_video_dec_ctx->width;
+        m_height  =  m_video_dec_ctx->height;
+        m_pix_fmt =  m_video_dec_ctx->pix_fmt;
 
         std::cout << "m_width:" << m_width << std::endl;
         std::cout << "m_height:" << m_height << std::endl;
@@ -376,8 +394,8 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         clean_up_exit();
     }
 
-    AVFrame* frame = av_frame_alloc();
-    if (!frame) {
+    m_frame = av_frame_alloc();
+    if (!m_frame) {
         fprintf(stderr, "Could not allocate frame\n");
         ret = AVERROR(ENOMEM);
         clean_up_exit();
@@ -392,8 +410,8 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
         clean_up_exit();
     }
 
-    AVPacket* pkt = av_packet_alloc();
-    if (!pkt) {
+    m_pkt = av_packet_alloc();
+    if (!m_pkt) {
         fprintf(stderr, "Could not allocate packet\n");
         ret = AVERROR(ENOMEM);
         clean_up_exit();
@@ -405,29 +423,33 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
     //     printf("Demuxing audio from file '%s' into '%s'\n", src_filename, audio_dst_filename);
 
     /* read frames from the file */
-    while (av_read_frame(m_fmt_ctx, pkt) >= 0) {
+    while (av_read_frame(m_fmt_ctx, m_pkt) >= 0) {
         // check if the packet belongs to a stream we are interested in, otherwise
         // skip it
-        if (pkt->stream_index == video_stream_idx)
+        if (m_pkt->stream_index == video_stream_idx)
         {
             char frame_type[2] = "?"; 
             int32_t *motion_vectors=nullptr; 
-            int32_t num_mvs;         
-            ret = decode_img(video_dec_ctx, frame,  
-                pkt, frame_type, 
-                &motion_vectors, &num_mvs);
+            int32_t num_mvs;
+            ret = decode_img(frame_type, &motion_vectors, &num_mvs);
+            
         }
-        else if (pkt->stream_index == audio_stream_idx)
+        else if (m_pkt->stream_index == audio_stream_idx)
             assert(false && "audio decodeing NOT implemented");
             //ret = decode_packet(audio_dec_ctx, pkt);
-        av_packet_unref(pkt);
+        av_packet_unref(m_pkt);
         if (ret < 0)
             break;
     }
 
     /* flush the decoders */
-    if (video_dec_ctx)
-        decode_packet(video_dec_ctx, NULL, frame);
+    if (m_video_dec_ctx)
+    {
+        char frame_type[2] = "?"; 
+        int32_t *motion_vectors=nullptr; 
+        int32_t num_mvs;         
+        ret = decode_img( frame_type, &motion_vectors, &num_mvs);
+    }
     //if (m_audio_dec_ctx)
     //    decode_packet(m_audio_dec_ctx, NULL);
 
@@ -439,29 +461,6 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
                av_get_pix_fmt_name(m_pix_fmt), m_width, m_height,
                video_dst_filename);
     }
-
-    // if (audio_stream) {
-    //     enum AVSampleFormat sfmt = audio_dec_ctx->sample_fmt;
-    //     int n_channels = audio_dec_ctx->ch_layout.nb_channels;
-    //     const char *fmt;
-    // 
-    //     if (av_sample_fmt_is_planar(sfmt)) {
-    //         const char *packed = av_get_sample_fmt_name(sfmt);
-    //         printf("Warning: the sample format the decoder produced is planar "
-    //                "(%s). This example will output the first channel only.\n",
-    //                packed ? packed : "?");
-    //         sfmt = av_get_packed_sample_fmt(sfmt);
-    //         n_channels = 1;
-    //     }
-    // 
-    //     if ((ret = get_format_from_sample_fmt(&fmt, sfmt)) < 0)
-    //         goto end;
-    // 
-    //     printf("Play the output audio file with the command:\n"
-    //            "ffplay -f %s -ac %d -ar %d %s\n",
-    //            fmt, n_channels, audio_dec_ctx->sample_rate,
-    //            audio_dst_filename);
-    // }
 
  }
 
@@ -507,61 +506,3 @@ int VideoDecoder_ffmpegImpl::get_format_from_sample_fmt(const char **fmt,
      return ret < 0;
  }
  
-     // uint8_t **frame, 
-    // int *step, 
-    // int *width, 
-    // int *height, 
-    // int *cn, 
-
-
- bool VideoDecoder_ffmpegImpl::retrieve_motion(
-    char *frame_type,
-    std::vector<AVMotionVector> &motion_vectors
-    ) 
-    {
-
-    if (!m_video_stream || !(this->m_frame->data[0]))
-        return false;
-
-    // change color space of frame
-    sws_scale(
-        m_sws_ctx,
-        m_frame->data,
-        m_frame->linesize,
-        0, m_video_dec_ctx->coded_height,
-        m_RGBFrame->data,
-        m_RGBFrame->linesize
-        );
-
-    //*frame = this->picture.data;
-    //*width = this->picture.width;
-    //*height = this->picture.height;
-    //*step = this->picture.step;
-    //*cn = this->picture.cn;
-
-    // get motion vectors
-    AVFrameSideData *sd = av_frame_get_side_data(m_frame, AV_FRAME_DATA_MOTION_VECTORS);
-    if (sd) {
-        AVMotionVector *mvs = (AVMotionVector *)sd->data;
-
-        int num_mvs = sd->size / sizeof(*mvs);
-
-
-        if (num_mvs > 0) {
-
-            // store the motion vectors 
-            for (MVS_DTYPE i = 0; i < num_mvs; ++i) {
-                motion_vectors.push_back(mvs[i]);
-            }
-        }
-    }
-
-    // get frame type (I, P, B, etc.) and create a null terminated c-string
-    frame_type[0] = av_get_picture_type_char(m_frame->pict_type);
-    frame_type[1] = '\0';
-
-    // return the timestamp which was computed previously in grab()
-    //*frame_timestamp = this->frame_timestamp;
-
-    return true;
-}

@@ -54,15 +54,13 @@ class VideoDecoder_ffmpegImpl
 
     int output_video_frame(AVFrame *frame);
     // int output_audio_frame();
-    int decode_packet(AVCodecContext* dec, const AVPacket* pkt, AVFrame* frame);
+    // int decode_packet(AVCodecContext* dec, const AVPacket* pkt, AVFrame* frame);
     int open_codec_context(int *stream_idx,
         AVCodecContext **dec_ctx, enum AVMediaType type);
 
     int get_format_from_sample_fmt(const char **fmt, enum AVSampleFormat sample_fmt);
 
-    int decode_img(AVCodecContext* dec_ctx, 
-        AVFrame* frame, 
-        AVPacket* pkt,
+    int decode_img( 
         char *frame_type, 
         int32_t **motion_vectors, 
         int32_t *num_mvs 
