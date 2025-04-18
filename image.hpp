@@ -65,8 +65,6 @@ public:
         return block_data;
     }
 
-    
-
 };
 
 #endif
