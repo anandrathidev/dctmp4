@@ -102,13 +102,19 @@ message(" LIBVA_DRM_LIB=${LIBVA_DRM_LIB} ")
 
     set(FFMPEGTest_SOURCES
     decode.cpp
+    dct.cpp
+    Matrix.cpp 
+
+    Matrix.hpp
     # [...]
     )
     #set_source_files_properties(${FFMPEGTest_SOURCES} PROPERTIES LANGUAGE CXX)
 
     add_executable(DCTEncoder 
     decode.cpp
-    )
+    dct.cpp
+    Matrix.cpp 
+   )
 
     set_target_properties(DCTEncoder PROPERTIES LINKER_LANGUAGE CXX)
     
