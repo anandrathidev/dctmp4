@@ -2,6 +2,7 @@
 #ifndef _MATRIX_HPP
 #define _MATRIX_HPP
 
+#include <array>
 #include <vector>
 #include <cstdint>
 //#include <cstddef>

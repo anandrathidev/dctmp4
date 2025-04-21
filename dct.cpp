@@ -1,5 +1,32 @@
 
 #include "dct.hpp"
+#include <array>
+
+template<typename DataType>
+using  Mat8x8 = std::array<std::array<DataType, 8>, 8>;
+
+template<typename DataType>
+void run_dct(const DataType *data, long width, long height, void (*dct_func)(Mat8x8<DataType> , Mat8x8<int16_t> ) )
+{
+    long width_strides = width / 8;
+    long height_strides = height / 8;
+    int i, j, k, l;
+    for (i = 0; i < height_strides; ++i) {
+        for (j = 0; j < width_strides; ++j) {
+            Mat8x8<DataType> image_region;
+            Mat8x8<int16_t>  dct_output_region;
+            // copy image into tmp
+            for (k = 0; k < 8; ++k) {
+                for (l = 0; l < 8; ++l) {
+                    int index = ((i * 8) + k) * width + ((j * 8) + l);
+                    image_region[k][l] = data[index];
+                }
+            }
+            // Call dct function
+            (*dct_func)(image_region, dct_output_region);
+        }
+    }
+}
 
 void init_dct(DCTMatrixT& dct_matrix, DCTMatrixT& matrix, int N, int M)
 {
@@ -14,7 +41,7 @@ void init_dct(DCTMatrixT& dct_matrix, DCTMatrixT& matrix, int N, int M)
             }
         }
     }  
-     }
+}
 
 void idct(DCTMatrixT& dct_matrix, DCTMatrixT& matrix, int N, int M){
     int i, j, u, v;
