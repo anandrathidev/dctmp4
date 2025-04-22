@@ -143,14 +143,30 @@ public:
 
 };
 
-struct Channels
+struct RGBChannels
 {
     uint8_t red;
     uint8_t green;
     uint8_t blue;
 };
 
-using Image =  Matrix<Channels>;
-using DCTMatrixT =  Matrix<float>;
+struct YCbCrChannels
+{
+    float Y;
+    float Cb;
+    float Cr;
+};
+
+using  ImageMat8x8   = FixedMatrix<RGBChannels, 8, 8>;
+using  ImageMatYCbCr8x8  = FixedMatrix<YCbCrChannels, 8, 8>;
+
+using  ImageMatY8x8  = FixedMatrix<float, 8, 8>;
+using  ImageMatCb8x8 = FixedMatrix<float, 8, 8>;
+using  ImageMatCr8x8 = FixedMatrix<float, 8, 8>;
+using  DCTMatrix8x8 = FixedMatrix<int16_t, 8, 8>;
+
+
+//using Image =  Matrix<Channels>;
+//using DCTMatrixT =  Matrix<float>;
 
 #endif // _MATRIX_HPP

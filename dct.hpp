@@ -7,8 +7,7 @@
 #include <stdlib.h>
 #include "Matrix.hpp"
 
-void init_dct(float **DCTMatrix, float **Matrix, int N, int M);
-void init_idct(float **Matrix, float **DCTMatrix, int N, int M);
+void init_dct8x8(DCTMatrixT& dct_matrix, DCTMatrixT& matrix);
 
 
 #endif
