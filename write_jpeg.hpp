@@ -4,6 +4,16 @@
 #include <boost/dynamic_bitset_fwd.hpp>
 #include <vector>
 
+// represent a single Huffman code
+struct BitCode
+{
+  BitCode() = default; // undefined state, must be initialized at a later time
+  BitCode(uint16_t code_, uint8_t numBits_)
+  : code(code_), numBits(numBits_) {}
+  uint16_t code;       // JPEG's Huffman codes are limited to 16 bits
+  uint8_t  numBits;    // number of valid bits
+};
+
 class Bitstream
 {
     public:
@@ -21,15 +31,6 @@ class Bitstream
     void append(uint8_t val);
 };
 
-// represent a single Huffman code
-struct BitCode
-{
-  BitCode() = default; // undefined state, must be initialized at a later time
-  BitCode(uint16_t code_, uint8_t numBits_)
-  : code(code_), numBits(numBits_) {}
-  uint16_t code;       // JPEG's Huffman codes are limited to 16 bits
-  uint8_t  numBits;    // number of valid bits
-};
 
 
 class Bytestream
@@ -51,6 +52,41 @@ class Bytestream
         m_byte_stream.push_back(uint8_t(length >> 8)); // length of the block (big-endian, includes the 2 length bytes as well)
         m_byte_stream.push_back(uint8_t(length & 0xFF));
     }
+
+
+  // store the most recently encoded bits that are not written yet
+  struct BitBuffer
+  {
+    int32_t data    = 0; // actually only at most 24 bits are used
+    uint8_t numBits = 0; // number of valid bits (the right-most bits)
+  } buffer;
+
+  // write Huffman bits stored in BitCode, keep excess bits in BitBuffer
+  Bytestream& operator<<(const BitCode& data)
+  {
+    // append the new bits to those bits leftover from previous call(s)
+    buffer.numBits += data.numBits;
+    buffer.data   <<= data.numBits;
+    buffer.data    |= data.code;
+
+    // write all "full" bytes
+    while (buffer.numBits >= 8)
+    {
+      // extract highest 8 bits
+      buffer.numBits -= 8;
+      auto oneByte = uint8_t(buffer.data >> buffer.numBits);
+      m_byte_stream.push_back(oneByte);
+
+      if (oneByte == 0xFF) // 0xFF has a special meaning for JPEGs (it's a block marker)
+        m_byte_stream.push_back(0);   // therefore pad a zero to indicate "nope, this one ain't a marker, it's just a coincidence"
+
+      // note: I don't clear those written bits, therefore buffer.bits may contain garbage in the high bits
+      //       if you really want to "clean up" (e.g. for debugging purposes) then uncomment the following line
+      //buffer.bits &= (1 << buffer.numBits) - 1;
+    }
+    return *this;
+  }
+
 
 };
 
