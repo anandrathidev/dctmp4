@@ -32,7 +32,6 @@ class Bitstream
 };
 
 
-
 class Bytestream
 {
     public:
@@ -61,6 +60,17 @@ class Bytestream
     uint8_t numBits = 0; // number of valid bits (the right-most bits)
   } buffer;
 
+
+  // write an array of bytes
+  template <typename T, int Size>
+  Bytestream& operator<<(T (&manyBytes)[Size])
+  {
+    for (auto c : manyBytes) {
+      m_byte_stream.push_back(c);
+    }
+    return *this;
+  }
+
   // write Huffman bits stored in BitCode, keep excess bits in BitBuffer
   Bytestream& operator<<(const BitCode& data)
   {
@@ -86,7 +96,51 @@ class Bytestream
     }
     return *this;
   }
+};
 
+const int16_t CodeWordLimit = 2048; // +/-2^11, maximum value after DCT
+
+class JPEGWriter : public Bytestream
+{
+    public:
+        JPEGWriter(size_t size):Bytestream(size) { }
+        JPEGWriter(const JPEGWriter& other) = default;
+        JPEGWriter& operator=(const JPEGWriter& other) = default;
+        JPEGWriter(JPEGWriter&& other) = default;
+        JPEGWriter& operator=(JPEGWriter&& other) = default;
+        ~JPEGWriter()= default;
+    
+        // void writeSOF0Header(Bitstream& bitWriter, uint16_t width, uint16_t height);
+        // void writeDQTHeader(Bitstream& bitWriter);
+        // void writeDHTHeader(Bitstream& bitWriter);
+        // void writeSOSHeader(Bitstream& bitWriter);
+
+      // write the JPEG header
+      // this is the first part of the JPEG file, it contains the JFIF header
+      
+      void writeJPEG(bool isRGB)
+      {
+        //   write quantization tables
+        addMarker(0xDB, 2 + (isRGB ? 2 : 1) * (1 + 8*8)); // length: 65 bytes per table + 2 bytes for this length field
+
+      }
+
+
+      // JFIF headers
+      void writeJFIFHeader()
+      {
+            const uint8_t HeaderJfif[2+2+16] =
+            { 0xFF,0xD8,         // SOI marker (start of image)
+            0xFF,0xE0,         // JFIF APP0 tag
+            0,16,              // length: 16 bytes (14 bytes payload + 2 bytes for this length field)
+            'J','F','I','F',0, // JFIF identifier, zero-terminated
+            1,1,               // JFIF version 1.1
+            0,                 // no density units specified
+            0,1,0,1,           // density: 1 pixel "per pixel" horizontally and vertically
+            0,0 };             // no thumbnail (size 0 x 0)
+        *this << HeaderJfif;
+
+      }
 
 };
 
