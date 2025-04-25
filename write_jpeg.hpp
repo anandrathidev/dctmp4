@@ -287,7 +287,7 @@ class JPEGWriter : public Bytestream
           *this << 0x01 // highest 4 bits: 0 => DC, lowest 4 bits: 1 => Cr,Cb (baseline)
                     << DcChrominanceCodesPerBitsize
                     << DcChrominanceValues;
-         *this << 0x11 // highest 4 bits: 1 => AC, lowest 4 bits: 1 => Cr,Cb (baseline)
+        *this << 0x11 // highest 4 bits: 1 => AC, lowest 4 bits: 1 => Cr,Cb (baseline)
                     << AcChrominanceCodesPerBitsize
                     << AcChrominanceValues;
 
@@ -295,9 +295,180 @@ class JPEGWriter : public Bytestream
           generateHuffmanTable(DcChrominanceCodesPerBitsize, DcChrominanceValues, huffmanChrominanceDC);
           generateHuffmanTable(AcChrominanceCodesPerBitsize, AcChrominanceValues, huffmanChrominanceAC);
         }
+        //////////////////////////////////////////
+        // start of scan (there is only a single scan for baseline JPEGs)
+        //////////////////////////////////////////
+        addMarker(0xDA, 2+1+2*numComponents+3); // 2 bytes for the length field, 1 byte for number of components,
+                                                            // then 2 bytes for each component and 3 bytes for spectral selection
+
+        // assign Huffman tables to each component
+        *this  << numComponents;
+        for (auto id = 1; id <= numComponents; id++)
+          // highest 4 bits: DC Huffman table, lowest 4 bits: AC Huffman table
+          *this << id << (id == 1 ? 0x00 : 0x11); // Y: tables 0 for DC and AC; Cb + Cr: tables 1 for DC and AC
+       // constant values for our baseline JPEGs (which have a single sequential scan)
+        static const uint8_t Spectral[3] = { 0, 63, 0 }; // spectral selection: must be from 0 to 63; successive approximation must be 0
+        *this << Spectral;
+
+      //////////////////////////////////////////
+      // adjust quantization tables with AAN scaling factors to simplify DCT
+      //////////////////////////////////////////
+      float scaledLuminance  [8*8];
+      float scaledChrominance[8*8];
+      for (auto i = 0; i < 8*8; i++)
+      {
+        auto row    = ZigZagInv[i] / 8; // same as ZigZagInv[i] >> 3
+        auto column = ZigZagInv[i] % 8; // same as ZigZagInv[i] &  7
+
+        // scaling constants for AAN DCT algorithm: AanScaleFactors[0] = 1, AanScaleFactors[k=1..7] = cos(k*PI/16) * sqrt(2)
+        static const float AanScaleFactors[8] = { 1, 1.387039845f, 1.306562965f, 1.175875602f, 1, 0.785694958f, 0.541196100f, 0.275899379f };
+        auto factor = 1 / (AanScaleFactors[row] * AanScaleFactors[column] * 8);
+        scaledLuminance  [ZigZagInv[i]] = factor / quantLuminance  [i];
+        scaledChrominance[ZigZagInv[i]] = factor / quantChrominance[i];
+        // if you really want JPEGs that are bitwise identical to Jon Olick's code then you need slightly different formulas (note: sqrt(8) = 2.828427125f)
+        //static const float aasf[] = { 1.0f * 2.828427125f, 1.387039845f * 2.828427125f, 1.306562965f * 2.828427125f, 1.175875602f * 2.828427125f, 1.0f * 2.828427125f, 0.785694958f * 2.828427125f, 0.541196100f * 2.828427125f, 0.275899379f * 2.828427125f }; // line 240 of jo_jpeg.cpp
+        //scaledLuminance  [ZigZagInv[i]] = 1 / (quantLuminance  [i] * aasf[row] * aasf[column]); // lines 266-267 of jo_jpeg.cpp
+        //scaledChrominance[ZigZagInv[i]] = 1 / (quantChrominance[i] * aasf[row] * aasf[column]);
+      }
+
+      // ////////////////////////////////////////
+      // precompute JPEG codewords for quantized DCT
+      // ////////////////////////////////////////
+      BitCode  codewordsArray[2 * CodeWordLimit];          // note: quantized[i] is found at codewordsArray[quantized[i] + CodeWordLimit]
+      BitCode* codewords = &codewordsArray[CodeWordLimit]; // allow negative indices, so quantized[i] is at codewords[quantized[i]]
+      uint8_t numBits = 1; // each codeword has at least one bit (value == 0 is undefined)
+      int32_t mask    = 1; // mask is always 2^numBits - 1, initial value 2^1-1 = 2-1 = 1
+      for (int16_t value = 1; value < CodeWordLimit; value++)
+      {
+        // numBits = position of highest set bit (ignoring the sign)
+        // mask    = (2^numBits) - 1
+        if (value > mask) // one more bit ?
+        {
+          numBits++;
+          mask = (mask << 1) | 1; // append a set bit
+        }
+        codewords[-value] = BitCode(mask - value, numBits); // note that I use a negative index => codewords[-value] = codewordsArray[CodeWordLimit  value]
+        codewords[+value] = BitCode(       value, numBits);
+      }
+
+      // just convert image data from void*
+      auto pixels = (const uint8_t*)pixels_;
+
+      // the next two variables are frequently used when checking for image borders
+      const auto maxWidth  = width  - 1; // "last row"
+      const auto maxHeight = height - 1; // "bottom line"
+
+      // process MCUs (minimum codes units) => image is subdivided into a grid of 8x8 or 16x16 tiles
+      const auto sampling = downsample ? 2 : 1; // 1x1 or 2x2 sampling
+      const auto mcuSize  = 8 * sampling;
+
+      // average color of the previous MCU
+      int16_t lastYDC = 0, lastCbDC = 0, lastCrDC = 0;
+      // convert from RGB to YCbCr
+      float Y[8][8], Cb[8][8], Cr[8][8];
+
+      for (unsigned short mcuY = 0; mcuY < height; mcuY += mcuSize) // each step is either 8 or 16 (=mcuSize)
+        for (unsigned short mcuX = 0; mcuX < width; mcuX += mcuSize)
+        {
+          // YCbCr 4:4:4 format: each MCU is a 8x8 block - the same applies to grayscale images, too
+          // YCbCr 4:2:0 format: each MCU represents a 16x16 block, stored as 4x 8x8 Y-blocks plus 1x 8x8 Cb and 1x 8x8 Cr block)
+          for (unsigned short blockY = 0; blockY < mcuSize; blockY += 8) // iterate once (YCbCr444 and grayscale) or twice (YCbCr420)
+            for (unsigned short blockX = 0; blockX < mcuSize; blockX += 8)
+            {
+              // now we finally have an 8x8 block ...
+              for (auto deltaY = 0; deltaY < 8; deltaY++)
+              {
+                unsigned short column = std::min(mcuX + blockX         , maxWidth); // must not exceed image borders, replicate last row/column if needed
+                unsigned short row    = std::min(mcuY + blockY + deltaY, maxHeight);
+                for (auto deltaX = 0; deltaX < 8; deltaX++)
+                {
+                  // find actual pixel position within the current image
+                  auto pixelPos = row * int(width) + column; // the cast ensures that we don't run into multiplication overflows
+                  if (column < maxWidth)
+                    column++;
+
+                  // grayscale images have solely a Y channel which can be easily derived from the input pixel by shifting it by 128
+                  if (!isRGB)
+                  {
+                    Y[deltaY][deltaX] = pixels[pixelPos] - 128.f;
+                    continue;
+                  }
+
+                  // RGB: 3 bytes per pixel (whereas grayscale images have only 1 byte per pixel)
+                  auto r = pixels[3 * pixelPos    ];
+                  auto g = pixels[3 * pixelPos + 1];
+                  auto b = pixels[3 * pixelPos + 2];
+
+                  Y   [deltaY][deltaX] = rgb2y (r, g, b) - 128; // again, the JPEG standard requires Y to be shifted by 128
+                  // YCbCr444 is easy - the more complex YCbCr420 has to be computed about 20 lines below in a second pass
+                  if (!downsample)
+                  {
+                    Cb[deltaY][deltaX] = rgb2cb(r, g, b); // standard RGB-to-YCbCr conversion
+                    Cr[deltaY][deltaX] = rgb2cr(r, g, b);
+                  }
+                }
+              }
+
+            // encode Y channel
+            lastYDC = encodeBlock(bitWriter, Y, scaledLuminance, lastYDC, huffmanLuminanceDC, huffmanLuminanceAC, codewords);
+            // Cb and Cr are encoded about 50 lines below
+          }
+
+          // grayscale images don't need any Cb and Cr information
+          if (!isRGB)
+            continue;
+
+          // ////////////////////////////////////////
+          // the following lines are only relevant for YCbCr420:
+          // average/downsample chrominance of four pixels while respecting the image borders
+          if (downsample)
+            for (short deltaY = 7; downsample && deltaY >= 0; deltaY--) // iterating loop in reverse increases cache read efficiency
+            {
+              auto row      = std::min(mcuY + 2*deltaY, maxHeight); // each deltaX/Y step covers a 2x2 area
+              auto column   =         mcuX;                        // column is updated inside next loop
+              auto pixelPos = (row * int(width) + column) * 3;     // numComponents = 3
+
+              // deltas (in bytes) to next row / column, must not exceed image borders
+              auto rowStep    = (row    < maxHeight) ? 3 * int(width) : 0; // always numComponents*width except for bottom    line
+              auto columnStep = (column < maxWidth ) ? 3              : 0; // always numComponents       except for rightmost pixel
+
+              for (short deltaX = 0; deltaX < 8; deltaX++)
+              {
+                // let's add all four samples (2x2 area)
+                auto right     = pixelPos + columnStep;
+                auto down      = pixelPos +              rowStep;
+                auto downRight = pixelPos + columnStep + rowStep;
+
+                // note: cast from 8 bits to >8 bits to avoid overflows when adding
+                auto r = short(pixels[pixelPos    ]) + pixels[right    ] + pixels[down    ] + pixels[downRight    ];
+                auto g = short(pixels[pixelPos + 1]) + pixels[right + 1] + pixels[down + 1] + pixels[downRight + 1];
+                auto b = short(pixels[pixelPos + 2]) + pixels[right + 2] + pixels[down + 2] + pixels[downRight + 2];
+
+                // convert to Cb and Cr
+                Cb[deltaY][deltaX] = rgb2cb(r, g, b) / 4; // I still have to divide r,g,b by 4 to get their average values
+                Cr[deltaY][deltaX] = rgb2cr(r, g, b) / 4; // it's a bit faster if done AFTER CbCr conversion
+
+                // step forward to next 2x2 area
+                pixelPos += 2*3; // 2 pixels => 6 bytes (2*numComponents)
+                column   += 2;
+
+                // reached right border ?
+                if (column >= maxWidth)
+                {
+                  columnStep = 0;
+                  pixelPos = ((row + 1) * int(width) - 1) * 3; // same as (row * width + maxWidth) * numComponents => current's row last pixel
+                }
+              }
+            } // end of YCbCr420 code for Cb and Cr
+
+          // encode Cb and Cr
+          lastCbDC = encodeBlock(bitWriter, Cb, scaledChrominance, lastCbDC, huffmanChrominanceDC, huffmanChrominanceAC, codewords);
+          lastCrDC = encodeBlock(bitWriter, Cr, scaledChrominance, lastCrDC, huffmanChrominanceDC, huffmanChrominanceAC, codewords);
+        }
 
 
-      } // WriteJPEG
+
+  } // WriteJPEG
 
 
       // JFIF headers
